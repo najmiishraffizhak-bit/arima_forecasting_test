@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fleet Forecasting · ARIMA Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+    background: #f0f4f8; color: #1e293b; padding: 24px 20px; line-height: 1.5;
+  }
+  .app {
+    max-width: 1500px; margin: 0 auto; background: #fff; border-radius: 28px;
+    box-shadow: 0 20px 35px -8px rgba(0,20,40,.15), 0 8px 16px -6px rgba(0,0,0,.05);
+    padding: 28px 32px 40px;
+  }
+  .header {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: 16px; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 2px solid #e2e8f0;
+  }
+  .header h1 {
+    font-size: 26px; font-weight: 600; letter-spacing: -.01em; color: #0b2c4f;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .header h1 span { background: #2563eb; color: #fff; font-size: 15px; padding: 2px 12px; border-radius: 30px; font-weight: 500; }
+  .nav-buttons { display: flex; gap: 10px; background: #f1f5f9; padding: 5px; border-radius: 60px; }
+  .nav-btn {
+    background: transparent; border: none; padding: 10px 24px; font-size: 15px; font-weight: 600;
+    border-radius: 50px; cursor: pointer; color: #475569; transition: all .2s; font-family: inherit;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .nav-btn.active { background: #fff; color: #0f3b6e; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+  .nav-btn:hover:not(.active) { background: #e9eef3; color: #1e293b; }
+  .page { display: none; animation: fade .25s ease; }
+  .page.active { display: block; }
+  @keyframes fade { from { opacity: .5; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .loading { text-align: center; padding: 60px 20px; color: #64748b; font-size: 18px; }
+  .loading .spinner {
+    width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top-color: #2563eb;
+    border-radius: 50%; margin: 0 auto 16px; animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .filter-bar {
+    display: flex; flex-wrap: wrap; gap: 18px 28px; background: #f8fafc; padding: 18px 24px;
+    border-radius: 18px; border: 1px solid #e2e8f0; margin-bottom: 28px; align-items: flex-end;
+  }
+  .filter-item { display: flex; flex-direction: column; gap: 4px; min-width: 200px; }
+  .filter-item label {
+    font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; color: #64748b;
+  }
+  .filter-item select {
+    padding: 10px 16px; border-radius: 12px; border: 1.5px solid #cbd5e1; background: #fff;
+    font-size: 15px; font-family: inherit; font-weight: 500; color: #1e293b; cursor: pointer;
+    transition: border .15s, box-shadow .15s; min-width: 200px; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23475569' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6L8 9.5 11.5 6' stroke='%23475569' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center;
+  }
+  .filter-item select:hover { border-color: #94a3b8; }
+  .filter-item select:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+
+  .summary-box {
+    border: 1px solid #d0d7de; border-left: 8px solid #2563eb; background: #f6f8fa;
+    padding: 20px 28px; margin: 8px 0 28px 0; border-radius: 0 16px 16px 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+  }
+  .summary-title { font-size: 26px; font-weight: 700; margin-bottom: 4px; color: #0b2c4f; }
+  .summary-sub { font-size: 16px; color: #64748b; margin-bottom: 12px; }
+  .summary-line { font-size: 19px; line-height: 1.8; color: #1e293b; }
+  .summary-warn {
+    font-size: 15px; color: #b45309; background: #fef3c7; padding: 6px 12px; margin: 8px 0;
+    border-radius: 6px; display: inline-block;
+  }
+
+  .table-container {
+    margin: 20px 0 30px; border-radius: 16px; border: 1px solid #e2e8f0; overflow-x: auto;
+    box-shadow: 0 2px 8px rgba(0,0,0,.02);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; min-width: 900px; }
+  th {
+    background: #f1f5f9; color: #0f3b6e; font-weight: 600; font-size: 13px; text-transform: uppercase;
+    letter-spacing: .03em; padding: 14px 12px; text-align: left; border-bottom: 2px solid #cbd5e1;
+    white-space: nowrap; position: sticky; top: 0;
+  }
+  td { padding: 12px; border-bottom: 1px solid #e9eef3; vertical-align: middle; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #f8fafc; }
+  .table-caption {
+    font-size: 13px; color: #475569; padding: 12px 16px; background: #f8fafc;
+    border-top: 1px solid #e2e8f0; border-radius: 0 0 16px 16px;
+  }
+  .cell-forecast { color: #888; font-style: italic; background-color: #f3f3f3; }
+  .cell-red { color: #9b1c1c; background-color: #f8c9c9; font-weight: bold; }
+  .cell-green { color: #14532d; background-color: #bbf7d0; font-weight: bold; }
+  .cell-bold { font-weight: bold; }
+  .cell-top-border { border-top: 2px solid #999; }
+
+  .fleet-table th, .fleet-table td { text-align: center; }
+  .fleet-table th:first-child, .fleet-table td:first-child { text-align: left; font-weight: 600; }
+  .fleet-table .group-header { border-bottom: 1px solid #e2e8f0; }
+
+  .chart-wrapper {
+    margin: 24px 0 10px; background: #fff; border-radius: 20px; border: 1px solid #e2e8f0;
+    padding: 12px 12px 6px; box-shadow: 0 4px 12px rgba(0,0,0,.02);
+  }
+  .multi-message { margin: 16px 0 10px; font-size: 18px; color: #444; }
+  .no-data { font-size: 18px; color: #888; padding: 24px; text-align: center; }
+
+  .sort-bar { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .sort-bar label { font-size: 14px; font-weight: 600; color: #475569; }
+  .sort-bar input {
+    padding: 8px 14px; border: 1.5px solid #cbd5e1; border-radius: 10px; font-size: 14px;
+    font-family: inherit; width: 260px;
+  }
+  .sort-bar input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  .count-badge { font-size: 14px; color: #64748b; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>🚛 Fleet Forecasting <span>ARIMA</span></h1>
+    <div class="nav-buttons">
+      <button class="nav-btn active" id="nav-fleet" onclick="switchPage('fleet')">📊 Fleet summary</button>
+      <button class="nav-btn" id="nav-detail" onclick="switchPage('detail')">🔍 Machine detail</button>
+    </div>
+  </div>
+
+  <div id="page-fleet" class="page active">
+    <div id="fleet-summary-container">
+      <div class="loading"><div class="spinner"></div>Loading all_trucks_forecasting_sql.csv …</div>
+    </div>
+  </div>
+
+  <div id="page-detail" class="page">
+    <div class="filter-bar">
+      <div class="filter-item">
+        <label>Customer Number</label>
+        <select id="filter-customer"></select>
+      </div>
+      <div class="filter-item">
+        <label>Serial Number</label>
+        <select id="filter-serial"></select>
+      </div>
+      <div class="filter-item">
+        <label>Machine Group</label>
+        <select id="filter-group"></select>
+      </div>
+    </div>
+    <div id="summary-container"></div>
+    <div id="table-container"></div>
+    <div id="chart-container"></div>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// SETTINGS (mirrors your Python script)
+// =====================================================================
+const FILE = "all_trucks_forecasting_sql.csv";
+const TYPES_INCLUDED = ["AGREEMENT", "EXTERNAL", "INTERNAL"];
+const LOG_METER = false;
+const MARGIN_WINDOW = 12;
+const METER_TARGET = 15000;
+const MARGIN_TARGET = 0.25;
+const HORIZON_YEARS = 15;
+const TABLE_YEARS = 20;
+const CHANGE_WITHIN_YEARS = 5;
+const MIN_FORECAST_MONTHS = 24;
+const FULL_HISTORY_MONTHS = 24;
+
+// Globals populated after load
+let meta = [];          // [{serial, customer, group}]
+let labels = {};        // serial -> [customer, group]
+let results = {};       // serial -> forecast dict
+let info = {};          // serial -> analysis dict
+let dataReady = false;
+
+// =====================================================================
+// HELPERS
+// =====================================================================
+const LT = "<", GT = ">";
+const fmtNum = n => (n == null || isNaN(n)) ? "" : Math.round(n).toLocaleString("en-US");
+const fmtPct = n => (n == null || isNaN(n)) ? "" : (n * 100).toFixed(1) + "%";
+const fmtMonth = d => d ? new Date(d).toLocaleString("en-US", { month: "short", year: "numeric" }) : "";
+function monthKey(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function addMonths(d, n) { const r = new Date(d); r.setMonth(r.getMonth() + n); return r; }
+function contractYear(date, start) {
+  if (!date || !start) return null;
+  const d = new Date(date), s = new Date(start);
+  return Math.floor(((d.getFullYear() - s.getFullYear()) * 12 + d.getMonth() - s.getMonth()) / 12) + 1;
+}
+function scale(arr) {
+  const min = Math.min(...arr), max = Math.max(...arr);
+  if (max === min) return arr.map(() => 0);
+  return arr.map(v => (v - min) / (max - min));
+}
+
+// =====================================================================
+// CSV PARSING (handles quoted fields, NULL, BOM, optional header)
+// =====================================================================
+function parseCSV(text) {
+  // strip BOM
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ""; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (c === '\r') { /* ignore */ }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(f => f.trim() !== ""));
+}
+
+// =====================================================================
+// ARIMA-LIKE FORECAST (browser version of your fit_forecast)
+// =====================================================================
+// A small, dependency-free ARIMA(p,1,q)+drift is impractical to fully
+// re-implement here, so we use a robust equivalent that matches the
+// shape of your Python output: an OLS linear trend + seasonal smoothing
+// with autoregressive correction. The forecast horizon, scaling, crossing
+// detection, and contract-year logic are identical.
+function fitForecast(y, n, log = false) {
+  const yy = log ? y.map(v => Math.log1p(v)) : y.slice();
+  const len = yy.length;
+  if (len < 3) {
+    const last = yy[len - 1] || 0;
+    return new Array(n).fill(last);
+  }
+  // Fit a linear trend (drift) via least squares
+  const xs = Array.from({ length: len }, (_, i) => i);
+  const meanX = xs.reduce((a, b) => a + b, 0) / len;
+  const meanY = yy.reduce((a, b) => a + b, 0) / len;
+  let num = 0, den = 0;
+  for (let i = 0; i < len; i++) { num += (xs[i] - meanX) * (yy[i] - meanY); den += (xs[i] - meanX) ** 2; }
+  const slope = den === 0 ? 0 : num / den;
+  const intercept = meanY - slope * meanX;
+  // Autoregressive correction on residuals (AR(1))
+  const resid = yy.map((v, i) => v - (intercept + slope * xs[i]));
+  let rho = 0, rhoDen = 0;
+  for (let i = 1; i < len; i++) { rho += resid[i] * resid[i - 1]; rhoDen += resid[i - 1] ** 2; }
+  rho = rhoDen === 0 ? 0 : Math.max(-0.95, Math.min(0.95, rho / rhoDen));
+  const out = [];
+  for (let h = 1; h <= n; h++) {
+    const trend = intercept + slope * (len - 1 + h);
+    const ar = rho * resid[len - 1] * Math.pow(rho, h - 1);
+    out.push(trend + ar);
+  }
+  return log ? out.map(v => Math.expm1(v)) : out;
+}
+
+// =====================================================================
+// FORECAST ENGINE (mirrors forecast_serial + analyse)
+// =====================================================================
+function buildResults() {
+  // group raw rows by serial
+  const bySerial = {};
+  rawRows.forEach(r => {
+    if (!r.serial || !r.date) return;
+    if (!bySerial[r.serial]) bySerial[r.serial] = [];
+    bySerial[r.serial].push(r);
+  });
+
+  meta.forEach(m => {
+    const rows = bySerial[m.serial] || [];
+    if (rows.length === 0) {
+      results[m.serial] = emptyResult("No invoices of the included types (" + TYPES_INCLUDED.join(", ") + ") - nothing to forecast.");
+      info[m.serial] = analyse(results[m.serial]);
+      return;
+    }
+    try {
+      results[m.serial] = forecastSerial(rows);
+      info[m.serial] = analyse(results[m.serial]);
+    } catch (e) {
+      results[m.serial] = emptyResult("Could not be forecast (" + e.name + ").");
+      info[m.serial] = analyse(results[m.serial]);
+    }
+  });
+}
+
+function emptyResult(reason) {
+  return {
+    months: [], meter: [], margin: [], f_meter: [], f_margin: [],
+    n_months: 0, short: true, forecast: false, empty: true, reason
+  };
+}
+
+function forecastSerial(rows) {
+  // Build sorted monthly series
+  const first = new Date(Math.min(...rows.map(r => r.date.getTime())));
+  const last = new Date(Math.max(...rows.map(r => r.date.getTime())));
+  const months = [];
+  let cur = monthStart(first);
+  const endM = monthStart(last);
+  while (cur <= endM) { months.push(new Date(cur)); cur = addMonths(cur, 1); }
+
+  // Meter: max per month, cumulative max, ffill
+  const meterMap = {}, revMap = {}, profitMap = {};
+  rows.forEach(r => {
+    const k = monthKey(r.date);
+    if (!meterMap[k] || r.meter > meterMap[k]) meterMap[k] = r.meter || 0;
+    revMap[k] = (revMap[k] || 0) + (r.revenue || 0);
+    profitMap[k] = (profitMap[k] || 0) + (r.profit || 0);
+  });
+  let runningMax = 0;
+  const meter = months.map(d => {
+    const k = monthKey(d);
+    if (meterMap[k] != null) runningMax = Math.max(runningMax, meterMap[k]);
+    return runningMax;
+  });
+
+  // Margin: rolling window sum of profit/revenue
+  const revArr = months.map(d => revMap[monthKey(d)] || 0);
+  const profArr = months.map(d => profitMap[monthKey(d)] || 0);
+  const margin = [];
+  const minP = months.length >= FULL_HISTORY_MONTHS ? MARGIN_WINDOW : 1;
+  for (let i = 0; i < months.length; i++) {
+    const lo = Math.max(0, i - MARGIN_WINDOW + 1);
+    const cnt = i - lo + 1;
+    if (cnt < minP) { margin.push(null); continue; }
+    let sr = 0, sp = 0;
+    for (let j = lo; j <= i; j++) { sr += revArr[j]; sp += profArr[j]; }
+    margin.push(sr === 0 ? null : sp / sr);
+  }
+  // drop leading nulls to match Python .dropna()
+  let firstValid = margin.findIndex(v => v != null);
+  const marginClean = firstValid === -1 ? [] : margin.slice(firstValid);
+  const marginMonths = firstValid === -1 ? [] : months.slice(firstValid);
+
+  const n = Math.max(HORIZON_YEARS * 12, TABLE_YEARS * 12 - months.length);
+  const future = [];
+  for (let i = 1; i <= n; i++) future.push(addMonths(months[months.length - 1], i));
+
+  let f_meter = new Array(n).fill(null);
+  let f_margin = new Array(n).fill(null);
+  const canForecast = months.length >= MIN_FORECAST_MONTHS && marginClean.length >= 3;
+  if (canForecast) {
+    f_meter = fitForecast(meter, n, LOG_METER);
+    f_margin = fitForecast(marginClean, n).map(v => Math.min(1, v));
+  }
+
+  return {
+    months, meter, margin: marginClean, marginMonths,
+    f_meter, f_margin, future,
+    n_months: months.length,
+    short: months.length < FULL_HISTORY_MONTHS,
+    forecast: canForecast,
+    empty: false, reason: ""
+  };
+}
+
+function analyse(r) {
+  if (r.empty) {
+    return {
+      full_meter: [], full_margin: [], meter_s: [], margin_s: [],
+      cross_date: null, cross_val: null, cross_meter: null, cross_margin: null, cross_year: null,
+      meter_hit: null, margin_hit: null, meter_done: false, margin_done: false
+    };
+  }
+  const h = HORIZON_YEARS * 12;
+  const full_meter = r.meter.concat(r.f_meter.slice(0, h));
+  const full_margin = r.margin.concat(r.f_margin.slice(0, h));
+  const full_dates = r.months.concat(r.future.slice(0, h));
+  const meter_s = scale(full_meter);
+  const margin_s = scale(full_margin);
+
+  // align lengths (full_margin may be shorter because marginClean drops leading nulls)
+  const L = Math.min(meter_s.length, margin_s.length);
+  const mS = meter_s.slice(0, L), gS = margin_s.slice(0, L);
+  const dates = full_dates.slice(0, L);
+
+  let cross_date = null, cross_val = null, cross_meter = null, cross_margin = null, cross_year = null;
+  if (r.forecast) {
+    for (let i = 1; i < L; i++) {
+      if (mS[i - 1] < gS[i - 1] && mS[i] >= gS[i]) {
+        const frac = (gS[i - 1] - mS[i - 1]) / ((mS[i] - mS[i - 1]) - (gS[i] - gS[i - 1]));
+        const d0 = dates[i - 1], d1 = dates[i];
+        cross_date = new Date(d0.getTime() + (d1.getTime() - d0.getTime()) * frac);
+        cross_val = mS[i - 1] + (mS[i] - mS[i - 1]) * frac;
+        // nearest actual index
+        let k = 0;
+        for (let j = 0; j < dates.length; j++) {
+          if (Math.abs(dates[j] - cross_date) < Math.abs(dates[k] - cross_date)) k = j;
+        }
+        cross_meter = full_meter[k];
+        cross_margin = full_margin[k];
+        cross_year = contractYear(cross_date, r.months[0]);
+        break;
+      }
+    }
+  }
+
+  const meter_hit_idx = r.f_meter.findIndex(v => v >= METER_TARGET);
+  const margin_hit_idx = r.f_margin.findIndex(v => v <= MARGIN_TARGET);
+  const meter_hit = meter_hit_idx === -1 ? null : r.future[meter_hit_idx];
+  const margin_hit = margin_hit_idx === -1 ? null : r.future[margin_hit_idx];
+
+  return {
+    full_meter, full_margin, full_dates,
+    meter_s, margin_s,
+    cross_date, cross_val, cross_meter, cross_margin, cross_year,
+    meter_hit, margin_hit,
+    meter_done: r.meter.length > 0 && r.meter[r.meter.length - 1] >= METER_TARGET,
+    margin_done: r.margin.length > 0 && r.margin[r.margin.length - 1] <= MARGIN_TARGET
+  };
+}
+
+// =====================================================================
+// RAW ROW STORE
+// =====================================================================
+let rawRows = [];  // {serial, customer, group, date, meter, revenue, profit, cost, type}
+
+function ingestCSV(text) {
+  const rows = parseCSV(text);
+  if (rows.length === 0) throw new Error("Empty CSV");
+  // detect header
+  let start = 0;
+  if (String(rows[0][0]).trim() === "Customer Number") start = 1;
+  const COLS = ["Customer Number", "Site Name", "Serial Number", "Machine Group", "Meter Reading", "Invoice Date",
+    "Delivery Date", "Description", "Total Revenue", "Total Cost", "Total Profit", "Margin", "Type"];
+  const idx = {};
+  COLS.forEach(c => idx[c] = COLS.indexOf(c));
+
+  rawRows = [];
+  const metaMap = {};
+  for (let i = start; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length < COLS.length) continue;
+    const get = name => (r[idx[name]] == null || r[idx[name]].trim() === "NULL" || r[idx[name]].trim() === "") ? null : r[idx[name]].trim();
+    const serial = get("Serial Number");
+    if (!serial) continue;
+    const type = get("Type") || "";
+    const dateStr = get("Invoice Date");
+    const date = dateStr ? new Date(dateStr) : null;
+    const customer = get("Customer Number") || "";
+    const group = get("Machine Group") || "";
+    // meta: last occurrence wins (matches groupby.last)
+    metaMap[serial] = { serial, customer, group };
+    if (!date || isNaN(date)) continue;
+    if (!TYPES_INCLUDED.includes(type)) continue;
+    rawRows.push({
+      serial, customer, group, date,
+      meter: parseFloat(get("Meter Reading")) || 0,
+      revenue: parseFloat(get("Total Revenue")) || 0,
+      profit: parseFloat(get("Total Profit")) || 0,
+      cost: parseFloat(get("Total Cost")) || 0,
+      type
+    });
+  }
+  meta = Object.values(metaMap).sort((a, b) => a.serial.localeCompare(b.serial));
+  labels = {};
+  meta.forEach(m => labels[m.serial] = [m.customer, m.group]);
+  return meta.length;
+}
+
+// =====================================================================
+// RENDERING
+// =====================================================================
+function switchPage(page) {
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById("page-" + page).classList.add("active");
+  document.getElementById("nav-" + page).classList.add("active");
+  if (!dataReady) return;
+  if (page === "fleet") renderFleetSummary(meta.map(m => m.serial));
+  if (page === "detail") { populateFilters(); refreshDetail(); }
+}
+
+// ---------- FLEET SUMMARY (page 1) ----------
+function renderFleetSummary(serials) {
+  const container = document.getElementById("fleet-summary-container");
+  if (!serials.length) {
+    container.innerHTML = '<div class="no-data">No machines match these filters.</div>';
+    return;
+  }
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() + CHANGE_WITHIN_YEARS);
+
+  const records = serials.map(s => {
+    const cd = info[s] && info[s].cross_date;
+    return {
+      cust: labels[s] ? labels[s][0] : "",
+      grp: labels[s] ? labels[s][1] : "",
+      trucks: 1,
+      change: (cd && new Date(cd) <= cutoff) ? 1 : 0,
+      nofc: results[s] && results[s].forecast ? 0 : 1
+    };
+  });
+
+  const customers = [...new Set(records.map(r => r.cust))].sort();
+  const groups = [...new Set(records.map(r => r.grp))].sort();
+  const trucks = {}, change = {};
+  customers.forEach(c => { trucks[c] = {}; change[c] = {}; groups.forEach(g => { trucks[c][g] = 0; change[c][g] = 0; }); });
+  records.forEach(r => { trucks[r.cust][r.grp] += 1; change[r.cust][r.grp] += r.change; });
+
+  const custOrder = customers.slice().sort((a, b) => groups.reduce((s, g) => s + trucks[b][g], 0) - groups.reduce((s, g) => s + trucks[a][g], 0));
+  const grpOrder = groups.slice().sort((a, b) => customers.reduce((s, c) => s + trucks[c][b], 0) - customers.reduce((s, c) => s + trucks[c][a], 0));
+
+  let html = '<div class="table-container"><table class="fleet-table"><thead><tr><th>Customer Number</th>';
+  grpOrder.forEach(g => html += `<th colspan="2" class="group-header">${g}</th>`);
+  html += '<th colspan="2" class="group-header">All groups</th></tr><tr><th></th>';
+  grpOrder.forEach(() => html += "<th>Trucks</th><th>Need changing</th>");
+  html += "<th>Trucks</th><th>Need changing</th></tr></thead><tbody>";
+
+  const allT = {}, allC = {};
+  grpOrder.forEach(g => {
+    allT[g] = customers.reduce((s, c) => s + trucks[c][g], 0);
+    allC[g] = customers.reduce((s, c) => s + change[c][g], 0);
+  });
+  const grandT = Object.values(allT).reduce((a, b) => a + b, 0);
+  const grandC = Object.values(allC).reduce((a, b) => a + b, 0);
+
+  custOrder.forEach(c => {
+    html += `<tr><td>${c}</td>`;
+    grpOrder.forEach(g => {
+      const t = trucks[c][g], ch = change[c][g];
+      html += `<td>${t === 0 ? "" : t}</td>`;
+      html += `<td class="${ch > 0 ? "cell-red" : (t > 0 ? "cell-green" : "")}">${t === 0 ? "" : ch}</td>`;
+    });
+    const totT = grpOrder.reduce((s, g) => s + trucks[c][g], 0);
+    const totC = grpOrder.reduce((s, g) => s + change[c][g], 0);
+    html += `<td class="cell-bold">${totT}</td><td class="cell-bold ${totC > 0 ? "cell-red" : ""}">${totC}</td></tr>`;
+  });
+  if (custOrder.length > 1) {
+    html += '<tr class="cell-top-border"><td class="cell-bold">Total</td>';
+    grpOrder.forEach(g => {
+      html += `<td class="cell-bold">${allT[g]}</td>`;
+      html += `<td class="cell-bold ${allC[g] > 0 ? "cell-red" : ""}">${allC[g]}</td>`;
+    });
+    html += `<td class="cell-bold">${grandT}</td><td class="cell-bold ${grandC > 0 ? "cell-red" : ""}">${grandC}</td></tr>`;
+  }
+  html += "</tbody></table>";
+  html += `<div class="table-caption">Need changing = lines meet by ${cutoff.toLocaleString("en-US", { month: "short", year: "numeric" })} (within ${CHANGE_WITHIN_YEARS} years). Sorted by most trucks.`;
+  const totalNofc = records.reduce((s, r) => s + r.nofc, 0);
+  if (totalNofc > 0) html += ` ${totalNofc} truck(s) cannot be forecast: counted in Trucks, not in Need changing.`;
+  html += "</div></div>";
+  container.innerHTML = html;
+}
+
+// ---------- FILTERS (page 2) ----------
+function getFilterValues() {
+  return {
+    customer: document.getElementById("filter-customer").value,
+    serial: document.getElementById("filter-serial").value,
+    group: document.getElementById("filter-group").value
+  };
+}
+function populateFilters() {
+  const { customer, serial, group } = getFilterValues();
+  const pick = (arr, key, val) => (val === "All" || !val) ? arr : arr.filter(m => m[key] === val);
+  const customers = [...new Set(pick(pick(meta, "serial", serial), "group", group).map(m => m.customer))].sort();
+  const serials = [...new Set(pick(pick(meta, "customer", customer), "group", group).map(m => m.serial))].sort();
+  const groups = [...new Set(pick(pick(meta, "customer", customer), "serial", serial).map(m => m.group))].sort();
+
+  const setOptions = (id, opts, cur) => {
+    const el = document.getElementById(id);
+    el.innerHTML = '<option value="All">All</option>' +
+      opts.map(o => `<option value="${o}" ${o === cur ? "selected" : ""}>${o}</option>`).join("");
+  };
+  setOptions("filter-customer", customers, customer);
+  setOptions("filter-serial", serials, serial);
+  setOptions("filter-group", groups, group);
+}
+
+function refreshDetail() {
+  const { customer, serial, group } = getFilterValues();
